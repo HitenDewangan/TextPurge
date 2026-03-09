@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TextPurge — Strip & Filter Text</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --border: #222;
+    --accent: #c8ff00;
+    --accent2: #ff4040;
+    --text: #e8e8e8;
+    --muted: #555;
+    --panel: #141414;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.4;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding: 24px 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    animation: fadeDown 0.6s ease both;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 1.5rem;
+    letter-spacing: -0.03em;
+  }
+
+  .logo span { color: var(--accent); }
+
+  .badge {
+    font-size: 0.65rem;
+    background: var(--border);
+    color: var(--muted);
+    padding: 4px 10px;
+    border-radius: 2px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto 1fr;
+    gap: 0;
+    padding: 0;
+    animation: fadeUp 0.7s ease 0.1s both;
+  }
+
+  .panel {
+    border: 1px solid var(--border);
+    border-top: none;
+    border-right: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel:first-child { border-left: none; }
+  .panel.full-width {
+    grid-column: 1 / -1;
+    border-right: none;
+    border-left: none;
+  }
+
+  .panel-header {
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--panel);
+  }
+
+  .panel-number {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 0.7rem;
+    color: var(--accent);
+    background: rgba(200,255,0,0.08);
+    border: 1px solid rgba(200,255,0,0.2);
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+  }
+
+  .panel-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .char-count {
+    margin-left: auto;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+
+  textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    padding: 20px 24px;
+    resize: none;
+    min-height: 280px;
+    transition: background 0.2s;
+  }
+
+  textarea:focus { background: rgba(255,255,255,0.015); }
+  textarea::placeholder { color: var(--muted); }
+
+  /* Controls row */
+  .controls {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 48px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: var(--panel);
+    flex-wrap: wrap;
+  }
+
+  .options {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex: 1;
+    flex-wrap: wrap;
+  }
+
+  label.toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.2s;
+  }
+
+  label.toggle:hover { color: var(--text); }
+
+  label.toggle input[type="checkbox"] {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border: 1px solid var(--muted);
+    background: transparent;
+    cursor: pointer;
+    position: relative;
+    border-radius: 2px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+
+  label.toggle input[type="checkbox"]:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  label.toggle input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    color: #000;
+    font-size: 10px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+  }
+
+  .btn-purge {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 12px 32px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-purge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.3);
+    transform: translateX(-100%) skewX(-10deg);
+    transition: transform 0.3s;
+  }
+
+  .btn-purge:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(200,255,0,0.25); }
+  .btn-purge:hover::before { transform: translateX(150%) skewX(-10deg); }
+  .btn-purge:active { transform: translateY(0); }
+
+  .btn-clear {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    padding: 11px 18px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+
+  .btn-clear:hover { color: var(--accent2); border-color: var(--accent2); }
+
+  /* Output panel */
+  .output-panel {
+    min-height: 220px;
+    position: relative;
+  }
+
+  .output-content {
+    padding: 20px 24px;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+    min-height: 200px;
+    color: var(--text);
+  }
+
+  .output-placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .removed-highlight {
+    background: rgba(255,64,64,0.12);
+    color: var(--accent2);
+    text-decoration: line-through;
+    border-radius: 2px;
+    padding: 0 2px;
+  }
+
+  .stats-bar {
+    padding: 10px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 24px;
+    background: var(--panel);
+  }
+
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--muted);
+  }
+
+  .stat-val {
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  .copy-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    padding: 4px 12px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: all 0.2s;
+    letter-spacing: 0.08em;
+  }
+
+  .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--accent); border-color: var(--accent); background: rgba(200,255,0,0.05); }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    background: var(--accent);
+    color: #000;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 0.8rem;
+    padding: 12px 24px;
+    border-radius: 2px;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    z-index: 1000;
+  }
+
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  /* Divider line decoration */
+  .panel-separator {
+    width: 1px;
+    background: var(--border);
+    position: relative;
+  }
+
+  @keyframes fadeDown {
+    from { opacity: 0; transform: translateY(-16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: rgba(200,255,0,0.2); }
+    50%       { border-color: rgba(200,255,0,0.6); }
+  }
+
+  .processing { animation: pulse-border 0.8s ease infinite; }
+
+  .removal-count {
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    background: rgba(255,64,64,0.1);
+    color: var(--accent2);
+    border: 1px solid rgba(255,64,64,0.2);
+    border-radius: 2px;
+    margin-left: auto;
+  }
+
+  @media (max-width: 720px) {
+    main { grid-template-columns: 1fr; }
+    .panel.full-width { grid-column: 1; }
+    header { padding: 16px 20px; }
+    .controls { padding: 16px 20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Text<span>Purge</span></div>
+  <span class="badge">Text Filter Utility</span>
+</header>
+
+<main>
+  <!-- Original Text Panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-number">01</div>
+      <div class="panel-title">Original Text</div>
+      <div class="char-count" id="orig-count">0 chars</div>
+    </div>
+    <textarea id="original" placeholder="Paste your large text block here. The filter will search through this text and remove any matching content found in the second panel..."></textarea>
+  </div>
+
+  <!-- Text to Remove Panel -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-number">02</div>
+      <div class="panel-title">Text to Remove</div>
+      <div class="char-count" id="remove-count">0 chars</div>
+    </div>
+    <textarea id="toremove" placeholder="Enter the text or sentences you want to strip out from the original. Supports multiple paragraphs — each will be individually searched and removed..."></textarea>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="options">
+      <label class="toggle">
+        <input type="checkbox" id="opt-case"> Case sensitive
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-regex"> Regex mode
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-trim" checked> Trim extra spaces
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="opt-lines"> Remove empty lines
+      </label>
+    </div>
+    <button class="btn-clear" onclick="clearAll()">Clear All</button>
+    <button class="btn-purge" onclick="purgeText()">⚡ Purge Text</button>
+  </div>
+
+  <!-- Output Panel -->
+  <div class="panel full-width output-panel">
+    <div class="panel-header">
+      <div class="panel-number">03</div>
+      <div class="panel-title">Filtered Output</div>
+      <div class="removal-count" id="removal-count" style="display:none"></div>
+    </div>
+    <div class="output-content" id="output">
+      <span class="output-placeholder">Your filtered text will appear here after clicking "Purge Text"...</span>
+    </div>
+    <div class="stats-bar" id="stats-bar" style="display:none">
+      <div class="stat">Original: <span class="stat-val" id="stat-orig">—</span></div>
+      <div class="stat">Removed: <span class="stat-val" id="stat-removed" style="color:var(--accent2)">—</span></div>
+      <div class="stat">Result: <span class="stat-val" id="stat-result">—</span></div>
+      <div class="stat">Reduction: <span class="stat-val" id="stat-pct">—</span></div>
+      <button class="copy-btn" id="copy-btn" onclick="copyOutput()">COPY OUTPUT</button>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast">Copied to clipboard!</div>
+
+<script>
+  const originalTA = document.getElementById('original');
+  const removeTA   = document.getElementById('toremove');
+  const outputDiv  = document.getElementById('output');
+
+  // Live char counts
+  originalTA.addEventListener('input', () => {
+    document.getElementById('orig-count').textContent = originalTA.value.length.toLocaleString() + ' chars';
+  });
+
+  removeTA.addEventListener('input', () => {
+    document.getElementById('remove-count').textContent = removeTA.value.length.toLocaleString() + ' chars';
+  });
+
+  function purgeText() {
+    const original = originalTA.value;
+    const toRemove = removeTA.value;
+
+    if (!original.trim()) {
+      flash('No original text provided.'); return;
+    }
+    if (!toRemove.trim()) {
+      flash('No removal text provided.'); return;
+    }
+
+    const caseSensitive = document.getElementById('opt-case').checked;
+    const regexMode     = document.getElementById('opt-regex').checked;
+    const trimSpaces    = document.getElementById('opt-trim').checked;
+    const removeEmpty   = document.getElementById('opt-lines').checked;
+
+    let result = original;
+    let removalCount = 0;
+
+    // Split removal text into individual segments (split by double newline or single)
+    const segments = toRemove
+      .split(/\n{2,}/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    // If no double-newline splits, try single paragraphs line by line
+    const allSegments = segments.length > 0 ? segments : [toRemove.trim()];
+
+    for (const seg of allSegments) {
+      if (!seg) continue;
+      try {
+        let pattern;
+        if (regexMode) {
+          pattern = new RegExp(seg, caseSensitive ? 'g' : 'gi');
+        } else {
+          const escaped = seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          pattern = new RegExp(escaped, caseSensitive ? 'g' : 'gi');
+        }
+        const before = result;
+        result = result.replace(pattern, '');
+        if (result !== before) removalCount++;
+      } catch(e) {
+        flash('Regex error: ' + e.message);
+        return;
+      }
+    }
+
+    if (trimSpaces) {
+      result = result.replace(/[ \t]{2,}/g, ' ').trim();
+    }
+
+    if (removeEmpty) {
+      result = result.replace(/^\s*[\r\n]/gm, '').trim();
+    }
+
+    // Display
+    outputDiv.textContent = result || '(All text was removed)';
+
+    // Stats
+    const origLen    = original.length;
+    const resultLen  = result.length;
+    const removedLen = origLen - resultLen;
+    const pct        = origLen > 0 ? ((removedLen / origLen) * 100).toFixed(1) : 0;
+
+    document.getElementById('stat-orig').textContent    = origLen.toLocaleString() + ' chars';
+    document.getElementById('stat-removed').textContent = removedLen.toLocaleString() + ' chars';
+    document.getElementById('stat-result').textContent  = resultLen.toLocaleString() + ' chars';
+    document.getElementById('stat-pct').textContent     = pct + '%';
+
+    const removalBadge = document.getElementById('removal-count');
+    removalBadge.textContent = removalCount + ' segment' + (removalCount !== 1 ? 's' : '') + ' removed';
+    removalBadge.style.display = 'block';
+
+    document.getElementById('stats-bar').style.display = 'flex';
+    document.getElementById('copy-btn').classList.remove('copied');
+    document.getElementById('copy-btn').textContent = 'COPY OUTPUT';
+  }
+
+  function clearAll() {
+    originalTA.value = '';
+    removeTA.value = '';
+    outputDiv.innerHTML = '<span class="output-placeholder">Your filtered text will appear here after clicking "Purge Text"...</span>';
+    document.getElementById('stats-bar').style.display = 'none';
+    document.getElementById('removal-count').style.display = 'none';
+    document.getElementById('orig-count').textContent   = '0 chars';
+    document.getElementById('remove-count').textContent = '0 chars';
+  }
+
+  function copyOutput() {
+    const text = outputDiv.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = '✓ COPIED!';
+      btn.classList.add('copied');
+      showToast();
+    });
+  }
+
+  function showToast() {
+    const t = document.getElementById('toast');
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  function flash(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.style.background = 'var(--accent2)';
+    t.classList.add('show');
+    setTimeout(() => {
+      t.classList.remove('show');
+      setTimeout(() => {
+        t.textContent = 'Copied to clipboard!';
+        t.style.background = 'var(--accent)';
+      }, 300);
+    }, 2500);
+  }
+
+  // Keyboard shortcut: Ctrl+Enter to purge
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') purgeText();
+  });
+</script>
+</body>
+</html>
